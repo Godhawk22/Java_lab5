@@ -274,79 +274,73 @@ public class LabUI extends javax.swing.JFrame {
         // TODO add your handling code here:
         int[] selectedRows = jTable1.getSelectedRows();
 
-        if (selectedRows.length > 0) {
-
-            int maxThreads = 4;
-            double step = 0.01; // шаг интегрирования
-
-            java.util.LinkedList<java.util.LinkedList<RecIntegral>> allTasks = new java.util.LinkedList<>();
-
-            // ===================== 1. Формируем задачи (разбиение интервала) =====================
-            for (int row : selectedRows) {
-
-                RecIntegral base = records.get(row);
-
-                double from = base.getFrom();
-                double to = base.getTo();
-
-                double partSize = (to - from) / maxThreads;
-
-                java.util.LinkedList<RecIntegral> rowTasks = new java.util.LinkedList<>();
-
-                for (int i = 0; i < maxThreads; i++) {
-
-                    double subFrom = from + i * partSize;
-                    double subTo = (i == maxThreads - 1)
-                            ? to
-                            : subFrom + partSize;
-
-                    try {
-                        rowTasks.add(new RecIntegral(subFrom, subTo, step));
-                    } catch (RecIntegral.InvalidRangeException ex) {
-                        System.getLogger(LabUI.class.getName())
-                              .log(System.Logger.Level.ERROR, (String) null, ex);
-                    }
-                }
-                allTasks.add(rowTasks);
-            }
-
-            // ===================== 2. Запуск потоков группами по 4 =====================
-            for (java.util.LinkedList<RecIntegral> tasks : allTasks) {
-
-                for (RecIntegral t : tasks) {
-                    t.start();
-                }
-
-                for (RecIntegral t : tasks) {
-                    try {
-                        t.join();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-
-                javax.swing.SwingUtilities.invokeLater(this::fillTableFromCollection);
-            }
-
-            // ===================== 3. Суммирование результатов =====================
-            int index = 0;
-
-            for (int row : selectedRows) {
-
-                double total = 0.0;
-
-                for (RecIntegral t : allTasks.get(index)) {
-                    total += t.getResult();
-                }
-
-                records.get(row).setResult(total);
-
-                index++;
-            }
-
-            // финальное обновление таблицы
-            fillTableFromCollection();
+        if (selectedRows.length == 0) {
+            return;
         }
+
+        final int maxThreads = 4;
+        final int[] selectedModelRows = java.util.Arrays.stream(selectedRows)
+            .map(jTable1::convertRowIndexToModel)
+            .toArray();
+
+        jButton2.setEnabled(false);
+
+        new javax.swing.SwingWorker<Void, Void>() {
+            @Override
+            protected Void doInBackground() {
+                for (int row : selectedModelRows) {
+                    RecIntegral base = records.get(row);
+
+                    double from = base.getFrom();
+                    double to = base.getTo();
+                    double step = base.getStep();
+
+                    double partSize = (to - from) / maxThreads;
+                    java.util.LinkedList<RecIntegral> tasks = new java.util.LinkedList<>();
+
+                    for (int i = 0; i < maxThreads; i++) {
+                        double subFrom = from + i * partSize;
+                        double subTo = (i == maxThreads - 1) ? to : subFrom + partSize;
+
+                        try {
+                            tasks.add(new RecIntegral(subFrom, subTo, step));
+                        } catch (RecIntegral.InvalidRangeException ex) {
+                            System.getLogger(LabUI.class.getName())
+                                  .log(System.Logger.Level.ERROR, (String) null, ex);
+                        }
+                    }
+
+                    for (RecIntegral task : tasks) {
+                        task.start();
+                    }
+
+                    for (RecIntegral task : tasks) {
+                        try {
+                            task.join();
+                        } catch (InterruptedException ex) {
+                            Thread.currentThread().interrupt();
+                            return null;
+                        }
+                    }
+
+                    double total = 0.0;
+                    for (RecIntegral task : tasks) {
+                        if (task.getResult() != null) {
+                            total += task.getResult();
+                        }
+                    }
+
+                    base.setResult(total);
+                }
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                fillTableFromCollection();
+                jButton2.setEnabled(true);
+            }
+        }.execute();
     }//GEN-LAST:event_jButton2ActionPerformed
 
     private void jButton3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton3ActionPerformed
