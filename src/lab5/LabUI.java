@@ -243,6 +243,54 @@ public class LabUI extends javax.swing.JFrame {
         }
     }
     
+
+    private static final int MAX_THREADS = 4;
+
+    private int[] getSelectedModelRows() {
+        return java.util.Arrays.stream(jTable1.getSelectedRows())
+            .map(jTable1::convertRowIndexToModel)
+            .toArray();
+    }
+
+    private java.util.LinkedList<RecIntegral> createSubTasks(RecIntegral base) {
+        double from = base.getFrom();
+        double to = base.getTo();
+        double step = base.getStep();
+        double partSize = (to - from) / MAX_THREADS;
+
+        java.util.LinkedList<RecIntegral> tasks = new java.util.LinkedList<>();
+
+        for (int i = 0; i < MAX_THREADS; i++) {
+            double subFrom = from + i * partSize;
+            double subTo = (i == MAX_THREADS - 1) ? to : subFrom + partSize;
+
+            try {
+                tasks.add(new RecIntegral(subFrom, subTo, step));
+            } catch (RecIntegral.InvalidRangeException ex) {
+                throw new IllegalStateException("Некорректный поддиапазон", ex);
+            }
+        }
+
+        return tasks;
+    }
+
+    private double calculateInParallel(RecIntegral base) throws InterruptedException {
+        java.util.LinkedList<RecIntegral> tasks = createSubTasks(base);
+
+        for (RecIntegral task : tasks) {
+            task.start();
+        }
+
+        double total = 0.0;
+        for (RecIntegral task : tasks) {
+            task.join();
+            if (task.getResult() != null) {
+                total += task.getResult();
+            }
+        }
+
+        return total;
+    }
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
         // TODO add your handling code here:    
         try {
@@ -272,16 +320,11 @@ public class LabUI extends javax.swing.JFrame {
 
     private void jButton2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton2ActionPerformed
         // TODO add your handling code here:
-        int[] selectedRows = jTable1.getSelectedRows();
+        int[] selectedModelRows = getSelectedModelRows();
 
-        if (selectedRows.length == 0) {
+        if (selectedModelRows.length == 0) {
             return;
         }
-
-        final int maxThreads = 4;
-        final int[] selectedModelRows = java.util.Arrays.stream(selectedRows)
-            .map(jTable1::convertRowIndexToModel)
-            .toArray();
 
         jButton2.setEnabled(false);
 
@@ -289,48 +332,12 @@ public class LabUI extends javax.swing.JFrame {
             @Override
             protected Void doInBackground() {
                 for (int row : selectedModelRows) {
-                    RecIntegral base = records.get(row);
-
-                    double from = base.getFrom();
-                    double to = base.getTo();
-                    double step = base.getStep();
-
-                    double partSize = (to - from) / maxThreads;
-                    java.util.LinkedList<RecIntegral> tasks = new java.util.LinkedList<>();
-
-                    for (int i = 0; i < maxThreads; i++) {
-                        double subFrom = from + i * partSize;
-                        double subTo = (i == maxThreads - 1) ? to : subFrom + partSize;
-
-                        try {
-                            tasks.add(new RecIntegral(subFrom, subTo, step));
-                        } catch (RecIntegral.InvalidRangeException ex) {
-                            System.getLogger(LabUI.class.getName())
-                                  .log(System.Logger.Level.ERROR, (String) null, ex);
-                        }
+                    try {
+                        records.get(row).setResult(calculateInParallel(records.get(row)));
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        break;
                     }
-
-                    for (RecIntegral task : tasks) {
-                        task.start();
-                    }
-
-                    for (RecIntegral task : tasks) {
-                        try {
-                            task.join();
-                        } catch (InterruptedException ex) {
-                            Thread.currentThread().interrupt();
-                            return null;
-                        }
-                    }
-
-                    double total = 0.0;
-                    for (RecIntegral task : tasks) {
-                        if (task.getResult() != null) {
-                            total += task.getResult();
-                        }
-                    }
-
-                    base.setResult(total);
                 }
                 return null;
             }
