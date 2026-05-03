@@ -61,6 +61,36 @@ public class RecIntegral extends Thread implements java.io.Serializable {
         return parsedValue;
     }
 
+    // ===================== Численные методы =====================
+    private static boolean hasTanDiscontinuity(double a, double b) {
+        double left = Math.min(a, b);
+        double right = Math.max(a, b);
+        double kStart = Math.ceil((left - Math.PI / 2.0) / Math.PI);
+        double point = Math.PI / 2.0 + kStart * Math.PI;
+        return point > left && point < right;
+    }
+
+    private static double integrateSimpson(double a, double b, double h) {
+        int n = (int) Math.ceil(Math.abs((b - a) / h));
+        if (n < 2) {
+            n = 2;
+        }
+        if (n % 2 != 0) {
+            n++;
+        }
+
+        double stepSize = (b - a) / n;
+        double sum = Math.tan(a) + Math.tan(b);
+
+        for (int i = 1; i < n; i++) {
+            double x = a + i * stepSize;
+            double factor = (i % 2 == 0) ? 2.0 : 4.0;
+            sum += factor * Math.tan(x);
+        }
+
+        return sum * stepSize / 3.0;
+    }
+
     // ===================== Поток вычисления =====================
     @Override
     public void run() {
@@ -70,19 +100,12 @@ public class RecIntegral extends Thread implements java.io.Serializable {
             + " start: [" + from + " ; " + to + "]"
         );
 
-        double sum = 0.0;
-
-        for (double x = from; x < to; x += step) {
-
-            double xNext = (x + step < to) ? (x + step) : to;
-
-            double f1 = Math.tan(x);
-            double f2 = Math.tan(xNext);
-
-            sum += (f1 + f2) / 2 * (xNext - x);
+        if (hasTanDiscontinuity(from, to)) {
+            result = Double.NaN;
+            return;
         }
 
-        result = sum;
+        result = integrateSimpson(from, to, step);
 
         System.out.println(
             Thread.currentThread().getName()
@@ -107,18 +130,10 @@ public class RecIntegral extends Thread implements java.io.Serializable {
     public static class IntegralCalculator {
 
         public static double integrateTan(double a, double b, double h) {
-            double sum = 0.0;
-
-            for (double x = a; x < b; x += h) {
-                double xNext = (x + h < b) ? (x + h) : b;
-
-                double f1 = Math.tan(x);
-                double f2 = Math.tan(xNext);
-
-                sum += (f1 + f2) / 2 * (xNext - x);
+            if (hasTanDiscontinuity(a, b)) {
+                throw new IllegalArgumentException("Интервал пересекает разрыв tg(x)");
             }
-
-            return sum;
+            return integrateSimpson(a, b, h);
         }
     }
 
