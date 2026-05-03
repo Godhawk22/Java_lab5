@@ -91,6 +91,40 @@ public class RecIntegral extends Thread implements java.io.Serializable {
         return sum * stepSize / 3.0;
     }
 
+
+    private static double integrateTanSafe(double a, double b, double h) {
+        if (!hasTanDiscontinuity(a, b)) {
+            return integrateSimpson(a, b, h);
+        }
+
+        final double epsilon = 1e-7;
+        double left = Math.min(a, b);
+        double right = Math.max(a, b);
+        double sign = (a <= b) ? 1.0 : -1.0;
+
+        double sum = 0.0;
+        double segmentStart = left;
+        long kStart = (long) Math.ceil((left - Math.PI / 2.0) / Math.PI);
+
+        for (long k = kStart; ; k++) {
+            double asymptote = Math.PI / 2.0 + k * Math.PI;
+            if (asymptote >= right) {
+                break;
+            }
+
+            double segEnd = asymptote - epsilon;
+            if (segEnd > segmentStart) {
+                sum += integrateSimpson(segmentStart, segEnd, h);
+            }
+            segmentStart = asymptote + epsilon;
+        }
+
+        if (segmentStart < right) {
+            sum += integrateSimpson(segmentStart, right, h);
+        }
+
+        return sign * sum;
+    }
     // ===================== Поток вычисления =====================
     @Override
     public void run() {
@@ -100,12 +134,7 @@ public class RecIntegral extends Thread implements java.io.Serializable {
             + " start: [" + from + " ; " + to + "]"
         );
 
-        if (hasTanDiscontinuity(from, to)) {
-            result = Double.NaN;
-            return;
-        }
-
-        result = integrateSimpson(from, to, step);
+        result = integrateTanSafe(from, to, step);
 
         System.out.println(
             Thread.currentThread().getName()
@@ -130,10 +159,7 @@ public class RecIntegral extends Thread implements java.io.Serializable {
     public static class IntegralCalculator {
 
         public static double integrateTan(double a, double b, double h) {
-            if (hasTanDiscontinuity(a, b)) {
-                throw new IllegalArgumentException("Интервал пересекает разрыв tg(x)");
-            }
-            return integrateSimpson(a, b, h);
+            return integrateTanSafe(a, b, h);
         }
     }
 
